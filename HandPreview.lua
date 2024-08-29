@@ -71,6 +71,20 @@ HandPreview.config_tab = function()
 						ref_value = "include_breakdown"
 					})
 				}
+			},
+			{
+				n = G.UIT.R,
+				config = {
+					align = 'cm'
+				},
+				nodes = {
+					create_toggle({
+						id = "hand_preview_hide_invisible_hands_toggle",
+						label = "Hide Hidden Hands",
+						ref_table = HandPreview.config,
+						ref_value = "hide_invisible_hands"
+					})
+				}
 			}
 		}
 	}
@@ -218,10 +232,31 @@ local function evaluate_combinations(cards)
 	return unique_hands
 end
 
+local function reorder_hands()
+	local ranked_hands = {}
+	for _,v in pairs(SMODS.PokerHands) do
+		local hand = G.GAME.hands[v.key]
+		print(v.key .. " | " .. tostring(HandPreview.config.hide_invisible_hands) .. " | " .. tostring(v.visible))
+		if not (HandPreview.config.hide_invisible_hands == true and v.visible ~= true) and hand ~= nil then
+			local chips = hand.s_chips + ((hand.level - 1) * hand.l_chips)
+			local mult = hand.s_mult + ((hand.level - 1) * hand.l_mult)
+			local value = chips * mult
+			table.insert(ranked_hands, {v.key, value})
+		end
+	end
+
+	table.sort(ranked_hands, function(a,b) return a[2] > b[2] end)
+
+	local sorted_hands = {}
+	for _,v in ipairs(ranked_hands) do
+		table.insert(sorted_hands, v[1])
+	end
+
+	return sorted_hands
+end
+
 local function display_hands(unique_hands)
-	local order = { "Flush Five", "Flush House", "Five of a Kind", "Royal Flush", "Straight Flush",
-		"Four of a Kind", "Full House", "Flush", "Straight", "Three of a Kind",
-		"Two Pair", "Pair", "High Card" }
+	local order = reorder_hands()
 
 	local grouped_hands = {}
 	local highest_card_value = nil
@@ -238,22 +273,22 @@ local function display_hands(unique_hands)
 		end
 
 		local description = nil
-		if hand_type == "High Card" and (not highest_card_value or cards[1].base.id > highest_card_value) then
+		if hand_type == "High Card" or hand_type == "bunc_Spectrum" or hand_type == "bunc_Spectrum Five" or hand_type == "fibonacci_Fibonacci" and (not highest_card_value or cards[1].base.id > highest_card_value) then
 			description = cards[1].base.value
 			highest_card_value = cards[1].base.id
-		elseif hand_type == "Pair" or hand_type == "Three of a Kind" or hand_type == "Four of a Kind" then
+		elseif hand_type == "Pair" or hand_type == "Three of a Kind" or hand_type == "Four of a Kind" or hand_type == "Five of a Kind" then
 			description = cards[1].base.value .. "s"
 		elseif hand_type == "Two Pair" then
 			description = cards[3].base.value .. "s & " .. cards[1].base.value .. "s"
-		elseif hand_type == "Straight" or hand_type == "Straight Flush" then
+		elseif hand_type == "Straight" or hand_type == "Straight Flush" or hand_type == "bunc_Straight Spectrum" then
 			if cards[1].base.value == '2' and cards[#cards].base.value == 'Ace' then
 				description = cards[#cards].base.value .. "-" .. cards[#cards - 1].base.value
 			else
 				description = cards[1].base.value .. "-" .. cards[#cards].base.value
 			end
-		elseif hand_type == "Flush" then
+		elseif hand_type == "Flush" or hand_type == "Flush Five" or hand_type == "Royal Flush" or hand_type == "fibonacci_Flushonacci" then
 			description = cards[1].base.suit
-		elseif hand_type == "Full House" then
+		elseif hand_type == "Full House" or hand_type == "bunc_Spectrum House" or hand_type == "Flush House" then
 			local rank_counts = {}
 			for _, card in ipairs(cards) do
 				if not rank_counts[card.base.value] then rank_counts[card.base.value] = 0 end
@@ -305,7 +340,7 @@ local function display_hands(unique_hands)
 			end)
 
 			local descriptions = table.concat(grouped_hands[hand_type], ", ")
-			local handInfo = hand_type
+			local handInfo = G.localization.misc.poker_hands[hand_type]
 			if includeDescriptions then
 				handInfo = handInfo .. ": " .. descriptions
 			end
