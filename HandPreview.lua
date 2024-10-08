@@ -1,7 +1,7 @@
 --- STEAMODDED HEADER
 --- MOD_NAME: Hand Preview
 --- MOD_ID: handpreview
---- MOD_AUTHOR: [Toeler]
+--- MOD_AUTHOR: [Toeler, elbe]
 --- MOD_DESCRIPTION: A utility mod to list the hands that you can make. v1.0.0
 
 ----------------------------------------------
@@ -115,6 +115,7 @@ function HandPreviewContainer:init(args)
 		{ n = G.UIT.R, config = { id = "hand_list" } }
 	}
 	args.config = args.config or {}
+	args.config.anchor = "Top Left"
 	MoveableContainer.init(self, args)
 end
 
@@ -146,8 +147,8 @@ function Game:start_run(args)
 
 	local container = HandPreviewContainer {
 		T = {
-			G.consumeables.T.x + G.consumeables.T.w,
-			G.consumeables.T.y + G.consumeables.T.h + 0.4,
+			G.jokers.T.x,
+			G.jokers.T.y + G.jokers.T.h + 0.8,
 			0,
 			0
 		},
@@ -203,7 +204,7 @@ local function evaluate_combinations(cards)
 		end
 	end
 
-	for size = 1, math.min(5, #filtered_cards) do
+	for size = 1, math.min(G.hand.config.highlighted_limit, #filtered_cards) do
 		local all_combos = {}
 
 		-- Generate initial combinations including forced cards
@@ -216,16 +217,11 @@ local function evaluate_combinations(cards)
 			-- Generate remaining combinations
 			generate_combinations(filtered_cards, size, 1, initial_combo, all_combos, forced_cards)
 		end
-
-		-- Evaluate each combination
 		for _, combo in ipairs(all_combos) do
-			local hand_type, loc_disp_text, _, scoring_hand, _ = G.FUNCS.get_poker_hand_info(combo)
-			local scoring_hand_hash = generate_card_hash(scoring_hand)
-			unique_hands[scoring_hand_hash] = {
-				hand_type = hand_type,
-				loc_disp_text = loc_disp_text,
-				scoring_hand = scoring_hand
-			}
+			local hand_type, _, _, _, _ = G.FUNCS.get_poker_hand_info(combo)
+			if not unique_hands[hand_type] then
+				table.insert(unique_hands, hand_type)
+			end
 		end
 	end
 
@@ -236,91 +232,30 @@ local function reorder_hands()
 	local ranked_hands = {}
 	for _,v in pairs(SMODS.PokerHands) do
 		local hand = G.GAME.hands[v.key]
-		print(v.key .. " | " .. tostring(HandPreview.config.hide_invisible_hands) .. " | " .. tostring(v.visible))
 		if not (HandPreview.config.hide_invisible_hands == true and v.visible ~= true) and hand ~= nil then
-			local chips = hand.s_chips + ((hand.level - 1) * hand.l_chips)
-			local mult = hand.s_mult + ((hand.level - 1) * hand.l_mult)
-			local value = chips * mult
-			table.insert(ranked_hands, {v.key, value})
+			local chips = to_big(hand.chips)
+			local mult = to_big(hand.mult)
+			local value = to_big(chips * mult)
+			if type(value) == "table" and value.array then
+				value = value.array[1]
+			end
+			table.insert(ranked_hands, {v.key, value, chips, mult})
 		end
 	end
 
 	table.sort(ranked_hands, function(a,b) return a[2] > b[2] end)
 
-	local sorted_hands = {}
-	for _,v in ipairs(ranked_hands) do
-		table.insert(sorted_hands, v[1])
-	end
-
-	return sorted_hands
+	return ranked_hands
 end
 
 local function display_hands(unique_hands)
 	local order = reorder_hands()
 
-	local grouped_hands = {}
-	local highest_card_value = nil
+	local available_hands = {}
 	for _, info in pairs(unique_hands) do
-		local hand_type = info.hand_type
-		local cards = {}
-		for _, card in ipairs(info.scoring_hand) do
-			cards[#cards + 1] = card
-		end
-		table.sort(cards, function(a, b) return a.base.id < b.base.id end)
-
-		if not grouped_hands[hand_type] then
-			grouped_hands[hand_type] = {}
-		end
-
-		local description = nil
-		if hand_type == "High Card" or hand_type == "bunc_Spectrum" or hand_type == "bunc_Spectrum Five" or hand_type == "fibonacci_Fibonacci" and (not highest_card_value or cards[1].base.id > highest_card_value) then
-			description = cards[1].base.value
-			highest_card_value = cards[1].base.id
-		elseif hand_type == "Pair" or hand_type == "Three of a Kind" or hand_type == "Four of a Kind" or hand_type == "Five of a Kind" then
-			description = cards[1].base.value .. "s"
-		elseif hand_type == "Two Pair" then
-			description = cards[3].base.value .. "s & " .. cards[1].base.value .. "s"
-		elseif hand_type == "Straight" or hand_type == "Straight Flush" or hand_type == "bunc_Straight Spectrum" then
-			if cards[1].base.value == '2' and cards[#cards].base.value == 'Ace' then
-				description = cards[#cards].base.value .. "-" .. cards[#cards - 1].base.value
-			else
-				description = cards[1].base.value .. "-" .. cards[#cards].base.value
-			end
-		elseif hand_type == "Flush" or hand_type == "Flush Five" or hand_type == "Royal Flush" or hand_type == "fibonacci_Flushonacci" then
-			description = cards[1].base.suit
-		elseif hand_type == "Full House" or hand_type == "bunc_Spectrum House" or hand_type == "Flush House" then
-			local rank_counts = {}
-			for _, card in ipairs(cards) do
-				if not rank_counts[card.base.value] then rank_counts[card.base.value] = 0 end
-				rank_counts[card.base.value] = rank_counts[card.base.value] + 1
-			end
-			local first, second = nil, nil
-			for rank, count in pairs(rank_counts) do
-				if count >= 3 then
-					first = rank
-				elseif not second or rank_counts[second] < count then
-					second = rank
-				end
-			end
-			description = first .. "s over " .. second .. "s"
-		end
-
-		if description then
-			local is_duplicate = false
-			for _, existing_description in ipairs(grouped_hands[hand_type]) do
-				if existing_description == description then
-					is_duplicate = true
-					break
-				end
-			end
-
-			if not is_duplicate then
-				if hand_type == "High Card" then
-					grouped_hands[hand_type][1] = description
-				else
-					grouped_hands[hand_type][#grouped_hands[hand_type] + 1] = description
-				end
-			end
+		local hand_type = info
+		if not available_hands[hand_type] then
+			available_hands[hand_type] = ""
 		end
 	end
 
@@ -331,20 +266,11 @@ local function display_hands(unique_hands)
 	local includeDescriptions = HandPreview.config.include_breakdown
 
 	for _, hand_type in ipairs(order) do
-		if grouped_hands[hand_type] and next(grouped_hands[hand_type]) then
-			-- Sort descriptions in value order for multiple entries in the same hand type
-			table.sort(grouped_hands[hand_type], function(a, b)
-				local a_high = a:match("^(.-)%s") or a
-				local b_high = b:match("^(.-)%s") or b
-				return a_high > b_high
-			end)
-
-			local descriptions = table.concat(grouped_hands[hand_type], ", ")
-			local handInfo = G.localization.misc.poker_hands[hand_type]
+		if available_hands[hand_type[1]] then
+			local handInfo = G.localization.misc.poker_hands[hand_type[1]]
 			if includeDescriptions then
-				handInfo = handInfo .. ": " .. descriptions
+				handInfo = handInfo .. ": " .. number_format(hand_type[3]) .. "x" .. number_format(hand_type[4])
 			end
-
 			HandPreview.container:add_hand(handInfo)
 			handCount = handCount + 1
 
@@ -359,19 +285,17 @@ local prev_card_hash
 local prev_preview_count
 local prev_include_facedown
 local prev_include_breakdown
-local orig_update = Game.update
-function Game:update(dt)
-	orig_update(self, dt)
 
+local function check_hands(self)
 	local preview_count = HandPreview.config.preview_count
 	local include_facedown = HandPreview.config.include_facedown
 	local include_breakdown = HandPreview.config.include_breakdown
 
 	if HandPreview.container then
-		HandPreview.container.states.visible = (self.STATE == self.STATES.SELECTING_HAND or self.STATE == self.STATES.HAND_PLAYED or self.STATE == self.STATES.DRAW_TO_HAND) and
+		HandPreview.container.states.visible = (self.STATE == self.STATES.SELECTING_HAND) and
 			preview_count > 0
-
-		if HandPreview.container.states.visible and G.hand then
+		HandPreview.container.states.anchor_points = "Top Left"
+		if HandPreview.container.states.visible and G.hand and table_length(G.hand.cards) <= 52 then
 			local card_hash = generate_card_hash(G.hand.cards)
 			if card_hash ~= prev_card_hash or prev_preview_count ~= preview_count or prev_include_facedown ~= include_facedown or prev_include_breakdown ~= include_breakdown then
 				prev_card_hash = card_hash
@@ -388,6 +312,12 @@ function Game:update(dt)
 			end
 		end
 	end
+end
+
+local orig_update = Game.update
+function Game:update(dt)
+	orig_update(self, dt)
+	check_hands(self)
 end
 
 ----------------------------------------------
