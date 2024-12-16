@@ -295,7 +295,7 @@ local function check_hands(self)
 		HandPreview.container.states.visible = (self.STATE == self.STATES.SELECTING_HAND) and
 			preview_count > 0
 		HandPreview.container.states.anchor_points = "Top Left"
-		if HandPreview.container.states.visible and G.hand and table_length(G.hand.cards) <= 16 then
+		if HandPreview.container.states.visible and G.hand and table_length(G.hand.cards) <= 12 then
 			local card_hash = generate_card_hash(G.hand.cards)
 			if card_hash ~= prev_card_hash or prev_preview_count ~= preview_count or prev_include_facedown ~= include_facedown or prev_include_breakdown ~= include_breakdown then
 				prev_card_hash = card_hash
